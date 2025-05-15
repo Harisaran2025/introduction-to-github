@@ -1,0 +1,65 @@
+import yfinance as yf
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
+import matplotlib.pyplot as plt
+
+# Fetch stock data for Apple (AAPL)
+stock_data = yf.download('AAPL', start='2020-01-01', end='2025-05-01')
+data = stock_data['Close'].values.reshape(-1, 1)
+
+# Normalize the data
+scaler = MinMaxScaler()
+scaled_data = scaler.fit_transform(data)
+
+# Prepare training and testing data
+train_size = int(len(scaled_data) * 0.8)
+train_data = scaled_data[:train_size]
+test_data = scaled_data[train_size:]
+
+def create_sequences(data, seq_length):
+    X, y = [], []
+    for i in range(len(data) - seq_length):
+        X.append(data[i:i + seq_length])
+        y.append(data[i + seq_length])
+    return np.array(X), np.array(y)
+
+seq_length = 10
+X_train, y_train = create_sequences(train_data, seq_length)
+X_test, y_test = create_sequences(test_data, seq_length)
+
+# Build LSTM model
+model = Sequential([
+    LSTM(50, activation='relu', input_shape=(seq_length, 1), return_sequences=True),
+    LSTM(50, activation='relu'),
+    Dense(1)
+])
+model.compile(optimizer='adam', loss='mse')
+
+# Train the model
+model.fit(X_train, y_train, epochs=20, batch_size=32, verbose=0)
+
+# Make predictions
+train_predict = model.predict(X_train, verbose=0)
+test_predict = model.predict(X_test, verbose=0)
+
+# Inverse transform predictions
+train_predict = scaler.inverse_transform(train_predict)
+y_train_inv = scaler.inverse_transform(y_train)
+test_predict = scaler.inverse_transform(test_predict)
+y_test_inv = scaler.inverse_transform(y_test)
+
+# Plot results
+plt.figure(figsize=(12, 6))
+plt.plot(stock_data.index[seq_length:train_size], y_train_inv, label='Actual Train Prices')
+plt.plot(stock_data.index[seq_length:train_size], train_predict, label='Predicted Train Prices')
+plt.plot(stock_data.index[train_size + seq_length:], y_test_inv, label='Actual Test Prices')
+plt.plot(stock_data.index[train_size + seq_length:], test_predict, label='Predicted Test Prices')
+plt.title('AAPL Stock Price Prediction')
+plt.xlabel('Date')
+plt.ylabel('Price (USD)')
+plt.legend()
+plt.savefig('stock_prediction.png')
+plt.close()
